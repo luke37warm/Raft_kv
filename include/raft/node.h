@@ -1,10 +1,12 @@
 #pragma once
-// A single Raft server. Milestone 1 builds the skeleton: persistent state,
-// crash/restart semantics, the randomized election timer, and the universal
-// "higher term => step down" rule. Elections arrive in milestone 2 and log
-// replication in milestone 3.
+// A single Raft server. Milestone 1 built the skeleton (persistent state,
+// crash/restart, election timer, "higher term => step down"). Milestone 2 adds
+// leader election: candidates, voting, and leader heartbeats. Log replication
+// arrives in milestone 3.
 
+#include <functional>
 #include <optional>
+#include <set>
 #include <vector>
 
 #include "raft/network.h"
@@ -41,9 +43,14 @@ class Node {
   Role role() const { return role_; }
   Term term() const { return term_; }
   NodeId voted_for() const { return voted_for_; }
+  NodeId leader_id() const { return leader_id_; }  // -1 if unknown
   Index commit_index() const { return commit_index_; }
   Index last_log_index() const { return log_.size(); }
   std::uint64_t election_timeouts() const { return election_timeouts_; }
+
+  // Observer hook, used by tests to check "at most one leader per term".
+  // Called the instant this node wins an election.
+  std::function<void(NodeId, Term)> on_become_leader;
 
  private:
   void persist();
@@ -52,6 +59,19 @@ class Node {
   void on_election_timeout();
   // Returns true if the term moved forward (and we stepped down).
   bool observe_term(Term t);
+
+  // Elections
+  void start_election();
+  void become_leader();
+  void send_heartbeats();
+  bool candidate_log_up_to_date(const RequestVote& rv) const;
+  Term last_log_term() const { return log_.empty() ? 0 : log_.back().term; }
+  int cluster_size() const { return static_cast<int>(peers_.size()) + 1; }
+
+  // RPC handlers
+  void handle_request_vote(NodeId from, const RequestVote& rv);
+  void handle_request_vote_reply(NodeId from, const RequestVoteReply& r);
+  void handle_append_entries(NodeId from, const AppendEntries& ae);
 
   NodeId id_;
   std::vector<NodeId> peers_;
@@ -69,10 +89,16 @@ class Node {
 
   // Volatile
   Role role_ = Role::Follower;
+  NodeId leader_id_ = -1;
+  // Who has voted for us in the current election (including ourselves). A set,
+  // not a counter: the network may duplicate a reply, and one voter must never
+  // count twice.
+  std::set<NodeId> voters_;
   Index commit_index_ = 0;
   Index last_applied_ = 0;
 
   std::optional<Simulator::TimerId> election_timer_;
+  std::optional<Simulator::TimerId> heartbeat_timer_;
   std::uint64_t election_timeouts_ = 0;
 };
 
