@@ -55,7 +55,7 @@ The build enables AddressSanitizer and UBSan by default. Turn them off with `-DR
 
 - [x] **1. Foundations:** deterministic simulator, simulated network, storage interface, node skeleton (14 tests)
 - [x] **2. Leader election:** randomized timeouts, `RequestVote`, heartbeats, step-down
-- [ ] **3. Log replication:** `AppendEntries` consistency check, commit index, apply to state machine
+- [x] **3. Log replication:** `AppendEntries` consistency check, commit index, apply to state machine
 - [ ] **4. KV layer and client API:** linearizable reads and writes, leader redirect, duplicate-request detection
 - [ ] **5. Persistence and recovery:** file-backed storage with fsync, crash and restart
 - [ ] **6. Log compaction:** snapshots and `InstallSnapshot`

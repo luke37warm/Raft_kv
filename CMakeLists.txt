@@ -36,3 +36,7 @@ add_test(NAME foundations COMMAND test_foundations)
 add_executable(test_election tests/test_election.cpp)
 target_link_libraries(test_election PRIVATE raft_core)
 add_test(NAME election COMMAND test_election)
+
+add_executable(test_replication tests/test_replication.cpp)
+target_link_libraries(test_replication PRIVATE raft_core)
+add_test(NAME replication COMMAND test_replication)

@@ -8,6 +8,8 @@
 #include <optional>
 #include <set>
 #include <vector>
+#include <map>
+#include <string>
 
 #include "raft/network.h"
 #include "raft/sim.h"
@@ -22,6 +24,7 @@ struct NodeConfig {
   Time election_timeout_min = 150000;  // 150 ms
   Time election_timeout_max = 300000;  // 300 ms
   Time heartbeat_interval = 50000;     // 50 ms
+  std::size_t max_entries_per_append = 64;  // cap on one AppendEntries batch
 };
 
 class Node {
@@ -37,6 +40,10 @@ class Node {
   void restart() { start(); }
 
   void on_message(const Envelope& env);
+  // Client entry point. Leader: append `command`, start replicating, return its
+  // log index. Otherwise (or for an empty command, reserved for the no-op): 0.
+  // A returned index is NOT a promise the command will commit.
+  Index propose(std::string command);
 
   NodeId id() const { return id_; }
   bool running() const { return running_; }
@@ -46,11 +53,16 @@ class Node {
   NodeId leader_id() const { return leader_id_; }  // -1 if unknown
   Index commit_index() const { return commit_index_; }
   Index last_log_index() const { return log_.size(); }
+  Index last_applied() const { return last_applied_; }
+  const std::vector<LogEntry>& log() const { return log_; }
   std::uint64_t election_timeouts() const { return election_timeouts_; }
 
   // Observer hook, used by tests to check "at most one leader per term".
   // Called the instant this node wins an election.
   std::function<void(NodeId, Term)> on_become_leader;
+  // The state machine hook: called once per committed entry, in log order.
+  // The leader's empty no-op entries are skipped.
+  std::function<void(Index, const LogEntry&)> on_apply;
 
  private:
   void persist();
@@ -72,6 +84,13 @@ class Node {
   void handle_request_vote(NodeId from, const RequestVote& rv);
   void handle_request_vote_reply(NodeId from, const RequestVoteReply& r);
   void handle_append_entries(NodeId from, const AppendEntries& ae);
+  void handle_append_entries_reply(NodeId from, const AppendEntriesReply& r);
+
+  //Replication
+  void replicate_to(NodeId peer);
+  void broadcast_append();
+  void advance_commit_index();
+  void apply_committed();
 
   NodeId id_;
   std::vector<NodeId> peers_;
@@ -96,6 +115,11 @@ class Node {
   std::set<NodeId> voters_;
   Index commit_index_ = 0;
   Index last_applied_ = 0;
+  // Leader only, rebuilt on every election win. For each follower:
+  //   next_index_  = the next log index we will try to send it
+  //   match_index_ = highest index we know it has in common with our log
+  std::map<NodeId, Index> next_index_;
+  std::map<NodeId, Index> match_index_; 
 
   std::optional<Simulator::TimerId> election_timer_;
   std::optional<Simulator::TimerId> heartbeat_timer_;

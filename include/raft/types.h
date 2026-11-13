@@ -45,6 +45,7 @@ struct AppendEntriesReply {
   Term term = 0;
   bool success = false;
   Index match_index = 0;  // valid when success; lets the leader advance fast
+  Index conflict_index = 0;  // valid when !success; lets the leader back up fast
 };
 
 using Message =
